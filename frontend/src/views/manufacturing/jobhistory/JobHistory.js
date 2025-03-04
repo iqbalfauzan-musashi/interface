@@ -9,10 +9,8 @@ import {
   CPagination,
   CPaginationItem,
   CTable,
-  CTableHead,
-  CTableRow,
-  CTableHeaderCell,
   CTableBody,
+  CTableRow,
   CTableDataCell,
   CButton,
   CModal,
@@ -20,24 +18,28 @@ import {
   CModalTitle,
   CModalBody,
   CModalFooter,
+  CFormInput,
+  CAlert,
 } from '@coreui/react'
 import axios from 'axios'
-import { cilTrash, cilArrowTop, cilArrowBottom } from '@coreui/icons'
+import { cilTrash, cilSearch } from '@coreui/icons'
 import CIcon from '@coreui/icons-react'
 import '../../../scss/inventoryConfig.scss'
 
 const JobHistory = () => {
-  // State declarations remain the same as they serve the same purposes
+  // State declarations
   const [jobHistory, setJobHistory] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [successMessage, setSuccessMessage] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
-  const [sortOrder, setSortOrder] = useState({ column: 'job_des', direction: 'asc' })
+  const [sortOrder, setSortOrder] = useState({ column: 'COMPLETION_DATE', direction: 'desc' })
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage] = useState(50)
   const [deleteItem, setDeleteItem] = useState(null)
+  const [deleting, setDeleting] = useState(false)
 
-  // Data fetching function remains unchanged
+  // Data fetching function
   const fetchJobHistory = async () => {
     setLoading(true)
     try {
@@ -56,46 +58,85 @@ const JobHistory = () => {
     fetchJobHistory()
   }, [])
 
-  // Sort handling remains the same
+  // Sort handling
   const handleSort = (column) => {
     const direction = sortOrder.column === column && sortOrder.direction === 'asc' ? 'desc' : 'asc'
     setSortOrder({ column, direction })
   }
 
-  // Delete handling remains the same
+  // Delete handling
   const handleDelete = async () => {
     if (!deleteItem) return
 
+    setDeleting(true)
+    console.log('Deleting item:', deleteItem) // Log item yang akan dihapus
     try {
-      await axios.delete(`http://localhost:3001/api/job-history/${deleteItem.no_part}`)
+      const response = await axios.delete(`http://localhost:3001/api/job-history/${deleteItem.NRP}`)
+      console.log('Delete response:', response) // Log respons dari server
+
+      setSuccessMessage(`Riwayat pekerjaan ${deleteItem.NAME} berhasil dihapus`)
       fetchJobHistory()
       setDeleteItem(null)
+
+      // Auto-hide success message after 3 seconds
+      setTimeout(() => {
+        setSuccessMessage(null)
+      }, 3000)
     } catch (error) {
       console.error('Error deleting job history:', error)
-      setError('Gagal menghapus riwayat pekerjaan. Silakan coba lagi nanti.')
+      setError(`Gagal menghapus riwayat pekerjaan: ${error.response?.data?.error || error.message}. Silakan coba lagi nanti.`)
+    } finally {
+      setDeleting(false)
     }
   }
 
-  // Data processing logic remains unchanged
-  const sortedJobHistory = [...jobHistory].sort((a, b) => {
-    if (sortOrder.direction === 'asc') {
-      return a[sortOrder.column] > b[sortOrder.column] ? 1 : -1
-    } else {
-      return a[sortOrder.column] < b[sortOrder.column] ? 1 : -1
-    }
-  })
+  // Format date for display
+  const formatDate = (date) => {
+    if (!date) return '-'
+    return new Date(date).toLocaleDateString('id-ID', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    })
+  }
 
-  const filteredJobHistory = sortedJobHistory.filter((item) =>
-    item.job_des.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+  // Data processing logic
+  const sortedAndFilteredHistory = React.useMemo(() => {
+    // First, filter the jobs based on search term
+    const filtered = jobHistory.filter((item) =>
+      Object.values(item).some(
+        value =>
+          value &&
+          typeof value === 'string' &&
+          value.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    )
 
+    // Then sort the filtered results
+    return [...filtered].sort((a, b) => {
+      const aValue = a[sortOrder.column] || ''
+      const bValue = b[sortOrder.column] || ''
+
+      if (sortOrder.direction === 'asc') {
+        return aValue > bValue ? 1 : -1
+      } else {
+        return aValue < bValue ? 1 : -1
+      }
+    })
+  }, [jobHistory, searchTerm, sortOrder])
+
+  // Calculate pagination
   const indexOfLastItem = currentPage * itemsPerPage
   const indexOfFirstItem = indexOfLastItem - itemsPerPage
-  const currentItems = filteredJobHistory.slice(indexOfFirstItem, indexOfLastItem)
+  const currentItems = sortedAndFilteredHistory.slice(indexOfFirstItem, indexOfLastItem)
+  const totalPages = Math.ceil(sortedAndFilteredHistory.length / itemsPerPage)
 
-  const paginate = (pageNumber) => setCurrentPage(pageNumber)
+  // Pagination handler
+  const handlePageChange = (pageNumber) => {
+    setCurrentPage(pageNumber)
+  }
 
-  // Loading spinner display remains unchanged
+  // Loading spinner display
   if (loading) {
     return (
       <div className="spinner-container">
@@ -104,164 +145,124 @@ const JobHistory = () => {
     )
   }
 
-  // Main component render with updated structure
+  // Table header component for better organization
+  const TableHeader = ({ column, children }) => (
+    <div className="fixed-header-cell" onClick={() => handleSort(column)}>
+      {children}
+      {sortOrder.column === column && (
+        <span className="ms-1">{sortOrder.direction === 'asc' ? '↑' : '↓'}</span>
+      )}
+    </div>
+  )
+
+  // Main component render
   return (
     <CRow className="job-list-page">
-      {' '}
-      {/* Changed to match inventory styling */}
       <CCol xs={12}>
+        {error && <CAlert color="danger" dismissible onClose={() => setError(null)}>{error}</CAlert>}
+        {successMessage && (
+          <CAlert color="success" dismissible onClose={() => setSuccessMessage(null)}>
+            {successMessage}
+          </CAlert>
+        )}
+
         <CCard className="mb-4">
           <CCardHeader className="d-flex justify-content-between align-items-center">
             <strong>Riwayat Pekerjaan</strong>
-            <div className="search-input">
-              <input
+            <div className="search-container">
+              <CFormInput
                 type="text"
-                className="form-control"
-                placeholder="Cari berdasarkan job description..."
+                placeholder="Cari berdasarkan nama atau deskripsi..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                className="search-input"
+                startContent={<CIcon icon={cilSearch} />}
               />
             </div>
           </CCardHeader>
           <CCardBody>
-            <div className="table-wrapper">
-              {/* Fixed header section with sort indicators */}
-              <div className="fixed-header">
-                <div className="fixed-header-cell" onClick={() => handleSort('nqp')}>
-                  NQP{' '}
-                  {sortOrder.column === 'nqp' && (
-                    <CIcon icon={sortOrder.direction === 'asc' ? cilArrowTop : cilArrowBottom} />
-                  )}
-                </div>
-                <div className="fixed-header-cell" onClick={() => handleSort('nama_job')}>
-                  Nama Job{' '}
-                  {sortOrder.column === 'nama_job' && (
-                    <CIcon icon={sortOrder.direction === 'asc' ? cilArrowTop : cilArrowBottom} />
-                  )}
-                </div>
-                <div className="fixed-header-cell" onClick={() => handleSort('job_class')}>
-                  Job Class{' '}
-                  {sortOrder.column === 'job_class' && (
-                    <CIcon icon={sortOrder.direction === 'asc' ? cilArrowTop : cilArrowBottom} />
-                  )}
-                </div>
-                <div className="fixed-header-cell" onClick={() => handleSort('sub_section')}>
-                  Sub Section{' '}
-                  {sortOrder.column === 'sub_section' && (
-                    <CIcon icon={sortOrder.direction === 'asc' ? cilArrowTop : cilArrowBottom} />
-                  )}
-                </div>
-                <div className="fixed-header-cell" onClick={() => handleSort('factory')}>
-                  Factory{' '}
-                  {sortOrder.column === 'factory' && (
-                    <CIcon icon={sortOrder.direction === 'asc' ? cilArrowTop : cilArrowBottom} />
-                  )}
-                </div>
-                <div className="fixed-header-cell" onClick={() => handleSort('job_des')}>
-                  Job Description{' '}
-                  {sortOrder.column === 'job_des' && (
-                    <CIcon icon={sortOrder.direction === 'asc' ? cilArrowTop : cilArrowBottom} />
-                  )}
-                </div>
-                <div className="fixed-header-cell" onClick={() => handleSort('update_job')}>
-                  Update Job{' '}
-                  {sortOrder.column === 'update_job' && (
-                    <CIcon icon={sortOrder.direction === 'asc' ? cilArrowTop : cilArrowBottom} />
-                  )}
-                </div>
-                <div className="fixed-header-cell" onClick={() => handleSort('due_date')}>
-                  Due Date{' '}
-                  {sortOrder.column === 'due_date' && (
-                    <CIcon icon={sortOrder.direction === 'asc' ? cilArrowTop : cilArrowBottom} />
-                  )}
-                </div>
-                <div className="fixed-header-cell" onClick={() => handleSort('tanggal_selesai')}>
-                  Tanggal Selesai{' '}
-                  {sortOrder.column === 'tanggal_selesai' && (
-                    <CIcon icon={sortOrder.direction === 'asc' ? cilArrowTop : cilArrowBottom} />
-                  )}
-                </div>
-                <div className="fixed-header-cell">Action</div>
-              </div>
+            <div className="fixed-header">
+              <TableHeader column="NRP">NRP</TableHeader>
+              <TableHeader column="NAME">Nama</TableHeader>
+              <TableHeader column="JOB_CLASS">Job Class</TableHeader>
+              <TableHeader column="JOB_DESC">Deskripsi Pekerjaan</TableHeader>
+              <TableHeader column="FACTORY">Pabrik</TableHeader>
+              <TableHeader column="DUE_DATE">Tanggal Jatuh Tempo</TableHeader>
+              <TableHeader column="STATUS">Status</TableHeader>
+              <TableHeader column="COMPLETION_DATE">Tanggal Selesai</TableHeader>
+              <TableHeader column="ORIGINAL_CREATED_AT">Tanggal Dibuat</TableHeader>
+              <div className="fixed-header-cell">Aksi</div>
+            </div>
 
-              {/* Table container for scrollable content */}
-              <div className="table-container">
-                <CTable striped hover responsive className="responsive-table">
-                  <CTableHead className="d-none">
-                    <CTableRow>
-                      <CTableHeaderCell>NQP</CTableHeaderCell>
-                      <CTableHeaderCell>Nama Job</CTableHeaderCell>
-                      <CTableHeaderCell>Job Class</CTableHeaderCell>
-                      <CTableHeaderCell>Sub Section</CTableHeaderCell>
-                      <CTableHeaderCell>Factory</CTableHeaderCell>
-                      <CTableHeaderCell>Job Description</CTableHeaderCell>
-                      <CTableHeaderCell>Update Job</CTableHeaderCell>
-                      <CTableHeaderCell>Due Date</CTableHeaderCell>
-                      <CTableHeaderCell>Tanggal Selesai</CTableHeaderCell>
-                      <CTableHeaderCell>Action</CTableHeaderCell>
-                    </CTableRow>
-                  </CTableHead>
-                  <CTableBody>
-                    {currentItems.map((job) => (
-                      <CTableRow key={job.no_part}>
-                        <CTableDataCell>{job.nqp}</CTableDataCell>
-                        <CTableDataCell>{job.nama_job}</CTableDataCell>
-                        <CTableDataCell>{job.job_class}</CTableDataCell>
-                        <CTableDataCell>{job.sub_section}</CTableDataCell>
-                        <CTableDataCell>{job.factory}</CTableDataCell>
-                        <CTableDataCell>{job.job_des}</CTableDataCell>
+            <div className="table-container">
+              <CTable striped hover responsive className="responsive-table">
+                <CTableBody>
+                  {currentItems.length > 0 ? (
+                    currentItems.map((job) => (
+                      <CTableRow key={job.NRP}>
+                        <CTableDataCell>{job.NRP}</CTableDataCell>
+                        <CTableDataCell>{job.NAME}</CTableDataCell>
+                        <CTableDataCell>{job.JOB_CLASS}</CTableDataCell>
+                        <CTableDataCell>{job.JOB_DESC}</CTableDataCell>
+                        <CTableDataCell>{job.FACTORY}</CTableDataCell>
+                        <CTableDataCell>{formatDate(job.DUE_DATE)}</CTableDataCell>
                         <CTableDataCell>
-                          {job.update_job ? new Date(job.update_job).toLocaleDateString() : '-'}
+                          <span className={`status-badge status-${job.STATUS?.toLowerCase()}`}>
+                            {job.STATUS || 'N/A'}
+                          </span>
                         </CTableDataCell>
+                        <CTableDataCell>{formatDate(job.COMPLETION_DATE)}</CTableDataCell>
+                        <CTableDataCell>{formatDate(job.ORIGINAL_CREATED_AT)}</CTableDataCell>
                         <CTableDataCell>
-                          {job.due_date ? new Date(job.due_date).toLocaleDateString() : '-'}
-                        </CTableDataCell>
-                        <CTableDataCell>
-                          {job.tanggal_selesai
-                            ? new Date(job.tanggal_selesai).toLocaleDateString()
-                            : '-'}
-                        </CTableDataCell>
-                        <CTableDataCell>
-                          <CButton color="danger" size="sm" onClick={() => setDeleteItem(job)}>
+                          <CButton
+                            color="danger"
+                            size="sm"
+                            onClick={() => setDeleteItem(job)}
+                            title="Hapus"
+                          >
                             <CIcon icon={cilTrash} />
                           </CButton>
                         </CTableDataCell>
                       </CTableRow>
-                    ))}
-                  </CTableBody>
-                </CTable>
-              </div>
+                    ))
+                  ) : (
+                    <CTableRow>
+                      <CTableDataCell colSpan="10" className="text-center">
+                        Tidak ada data riwayat pekerjaan yang tersedia
+                      </CTableDataCell>
+                    </CTableRow>
+                  )}
+                </CTableBody>
+              </CTable>
             </div>
 
-            {/* Pagination controls */}
-            <CPagination aria-label="Page navigation" className="mt-3">
-              <CPaginationItem
-                disabled={currentPage === 1}
-                onClick={() => paginate(currentPage - 1)}
-              >
-                Previous
-              </CPaginationItem>
-              {[...Array(Math.ceil(filteredJobHistory.length / itemsPerPage))].map((_, index) => (
+            {totalPages > 1 && (
+              <CPagination className="mt-3 justify-content-center">
                 <CPaginationItem
-                  key={index + 1}
-                  active={index + 1 === currentPage}
-                  onClick={() => paginate(index + 1)}
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
                 >
-                  {index + 1}
+                  Previous
                 </CPaginationItem>
-              ))}
-              <CPaginationItem
-                disabled={currentPage === Math.ceil(filteredJobHistory.length / itemsPerPage)}
-                onClick={() => paginate(currentPage + 1)}
-              >
-                Next
-              </CPaginationItem>
-            </CPagination>
+                {[...Array(totalPages)].map((_, index) => (
+                  <CPaginationItem
+                    key={index + 1}
+                    active={currentPage === index + 1}
+                    onClick={() => handlePageChange(index + 1)}
+                  >
+                    {index + 1}
+                  </CPaginationItem>
+                ))}
+                <CPaginationItem
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                </CPaginationItem>
+              </CPagination>
+            )}
           </CCardBody>
         </CCard>
-
-        {/* Error display */}
-        {error && <div className="alert alert-danger">{error}</div>}
 
         {/* Delete confirmation modal */}
         <CModal visible={!!deleteItem} onClose={() => setDeleteItem(null)}>
@@ -271,16 +272,29 @@ const JobHistory = () => {
           <CModalBody>
             Apakah Anda yakin ingin menghapus riwayat pekerjaan:
             <br />
-            <strong>NQP: {deleteItem?.nqp}</strong>
+            <strong>NRP: {deleteItem?.NRP}</strong>
             <br />
-            <strong>Job Description: {deleteItem?.job_des}</strong>
+            <strong>Nama: {deleteItem?.NAME}</strong>
+            <br />
+            <strong>Deskripsi Pekerjaan: {deleteItem?.JOB_DESC}</strong>
           </CModalBody>
           <CModalFooter>
             <CButton color="secondary" onClick={() => setDeleteItem(null)}>
               Batal
             </CButton>
-            <CButton color="danger" onClick={handleDelete}>
-              Hapus
+            <CButton
+              color="danger"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              {deleting ? (
+                <>
+                  <CSpinner size="sm" color="light" className="me-1" />
+                  Memproses...
+                </>
+              ) : (
+                'Hapus'
+              )}
             </CButton>
           </CModalFooter>
         </CModal>

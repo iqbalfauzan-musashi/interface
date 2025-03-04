@@ -102,6 +102,7 @@ router.post("/", async (req, res) => {
 });
 
 // Update job list item
+// Update job list item
 router.put("/:NRP", async (req, res) => {
   const { NRP } = req.params;
   const { NAME, JOB_CLASS, JOB_DESC, FACTORY, DUE_DATE, STATUS } = req.body;

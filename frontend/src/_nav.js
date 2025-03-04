@@ -124,11 +124,6 @@ const _nav = [
         name: 'History Job',
         to: '/manufacturing/jobhistory',
       },
-      {
-        component: CNavItem,
-        name: 'History Maintenance',
-        to: '/maintenance/select',
-      },
     ],
   },
   {

@@ -14,13 +14,12 @@ import {
   CModalBody,
   CModalFooter,
   CTable,
-  CTableHead,
-  CTableRow,
-  CTableHeaderCell,
   CTableBody,
+  CTableRow,
   CTableDataCell,
   CButton,
   CFormInput,
+  CAlert,
 } from '@coreui/react'
 import axios from 'axios'
 import { useNavigate } from 'react-router-dom'
@@ -29,18 +28,20 @@ import CIcon from '@coreui/icons-react'
 import '../../../scss/inventoryConfig.scss'
 
 const JobList = () => {
-  // State management for job list data and UI controls
   const [jobs, setJobs] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [successMessage, setSuccessMessage] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [sortOrder, setSortOrder] = useState({ column: 'NAME', direction: 'asc' })
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage] = useState(50)
   const [completeItem, setCompleteItem] = useState(null)
+  const [completingJob, setCompletingJob] = useState(false)
+  const [updateItem, setUpdateItem] = useState(null) // State for update modal
+  const [updatingJob, setUpdatingJob] = useState(false) // State for updating job
   const navigate = useNavigate()
 
-  // Function to fetch job list data from the API
   const fetchJobs = async () => {
     setLoading(true)
     try {
@@ -55,37 +56,60 @@ const JobList = () => {
     }
   }
 
-  // Fetch jobs when component mounts
   useEffect(() => {
     fetchJobs()
   }, [])
 
-  // Navigation handler for updating jobs
-  const handleUpdate = (NRP) => {
-    navigate(`/manufacturing/job-list/update/${NRP}`)
+  const handleUpdate = (job) => {
+    setUpdateItem(job) // Set the job to be updated
   }
 
-  // Sorting handler for table columns
   const handleSort = (column) => {
     const direction = sortOrder.column === column && sortOrder.direction === 'asc' ? 'desc' : 'asc'
     setSortOrder({ column, direction })
   }
 
-  // Handler for completing jobs and moving them to history
   const handleComplete = async () => {
     if (!completeItem) return
 
+    setCompletingJob(true)
     try {
-      await axios.post(`http://localhost:3001/api/job-history/move-to-history/${completeItem.NRP}`)
-      fetchJobs() // Refresh the job list
+      const response = await axios.post(`http://localhost:3001/api/job-history/move-to-history/${completeItem.NRP}`)
+      setSuccessMessage(`Pekerjaan ${completeItem.NAME} telah berhasil diselesaikan`)
+      fetchJobs()
       setCompleteItem(null)
+      console.log('Job completed successfully:', response.data)
+      setTimeout(() => {
+        setSuccessMessage(null)
+      }, 3000)
     } catch (error) {
-      console.error('Error completing job:', error)
-      setError('Gagal menyelesaikan pekerjaan. Silakan coba lagi nanti.')
+      console.error('Error completing job:', error.response?.data || error.message)
+      setError(`Gagal menyelesaikan pekerjaan: ${error.response?.data?.error || error.message}. Silakan coba lagi nanti.`)
+    } finally {
+      setCompletingJob(false)
     }
   }
 
-  // Format date for display
+  const handleUpdateJob = async () => {
+    if (!updateItem) return
+
+    setUpdatingJob(true)
+    try {
+      const response = await axios.put(`http://localhost:3001/api/job-list/${updateItem.NRP}`, updateItem)
+      setSuccessMessage(`Pekerjaan ${updateItem.NAME} telah berhasil diperbarui`)
+      fetchJobs()
+      setUpdateItem(null)
+      console.log('Job updated successfully:', response.data)
+      setTimeout(() => {
+        setSuccessMessage(null)
+      }, 3000)
+    } catch (error) {
+      console.error('Error updating job:', error.response?.data || error.message)
+      setError(`Gagal memperbarui pekerjaan: ${error.response?.data?.error || error.message}. Silakan coba lagi nanti.`)
+    } finally {
+      setUpdatingJob(false)
+    }
+  }
   const formatDate = (date) => {
     if (!date) return '-'
     return new Date(date).toLocaleDateString('id-ID', {
@@ -95,17 +119,19 @@ const JobList = () => {
     })
   }
 
-  // Sort and filter jobs based on current criteria
   const sortedAndFilteredJobs = React.useMemo(() => {
-    // First, filter the jobs based on search term
     const filtered = jobs.filter((item) =>
-      item.NAME.toLowerCase().includes(searchTerm.toLowerCase()),
+      Object.values(item).some(
+        value =>
+          value &&
+          typeof value === 'string' &&
+          value.toLowerCase().includes(searchTerm.toLowerCase())
+      )
     )
 
-    // Then sort the filtered results
     return [...filtered].sort((a, b) => {
-      const aValue = a[sortOrder.column]
-      const bValue = b[sortOrder.column]
+      const aValue = a[sortOrder.column] || ''
+      const bValue = b[sortOrder.column] || ''
 
       if (sortOrder.direction === 'asc') {
         return aValue > bValue ? 1 : -1
@@ -115,18 +141,15 @@ const JobList = () => {
     })
   }, [jobs, searchTerm, sortOrder])
 
-  // Calculate pagination
   const indexOfLastItem = currentPage * itemsPerPage
   const indexOfFirstItem = indexOfLastItem - itemsPerPage
   const currentItems = sortedAndFilteredJobs.slice(indexOfFirstItem, indexOfLastItem)
   const totalPages = Math.ceil(sortedAndFilteredJobs.length / itemsPerPage)
 
-  // Pagination handler
   const handlePageChange = (pageNumber) => {
     setCurrentPage(pageNumber)
   }
 
-  // Loading state
   if (loading) {
     return (
       <div className="spinner-container">
@@ -135,7 +158,6 @@ const JobList = () => {
     )
   }
 
-  // Table header component for better organization
   const TableHeader = ({ column, children }) => (
     <div className="fixed-header-cell" onClick={() => handleSort(column)}>
       {children}
@@ -148,13 +170,20 @@ const JobList = () => {
   return (
     <CRow className="job-list-page">
       <CCol xs={12}>
+        {error && <CAlert color="danger" dismissible onClose={() => setError(null)}>{error}</CAlert>}
+        {successMessage && (
+          <CAlert color="success" dismissible onClose={() => setSuccessMessage(null)}>
+            {successMessage}
+          </CAlert>
+        )}
+
         <CCard className="mb-4">
           <CCardHeader className="d-flex justify-content-between align-items-center">
             <strong>Daftar Pekerjaan Karyawan</strong>
             <div className="search-container">
               <CFormInput
                 type="text"
-                placeholder="Cari berdasarkan nama..."
+                placeholder="Cari berdasarkan nama atau deskripsi..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="search-input"
@@ -179,73 +208,82 @@ const JobList = () => {
             <div className="table-container">
               <CTable striped hover responsive className="responsive-table">
                 <CTableBody>
-                  {currentItems.map((job) => (
-                    <CTableRow key={job.NRP}>
-                      <CTableDataCell>{job.NRP}</CTableDataCell>
-                      <CTableDataCell>{job.NAME}</CTableDataCell>
-                      <CTableDataCell>{job.JOB_CLASS}</CTableDataCell>
-                      <CTableDataCell>{job.JOB_DESC}</CTableDataCell>
-                      <CTableDataCell>{job.FACTORY}</CTableDataCell>
-                      <CTableDataCell>{formatDate(job.DUE_DATE)}</CTableDataCell>
-                      <CTableDataCell>
-                        <span className={`status-badge status-${job.STATUS.toLowerCase()}`}>
-                          {job.STATUS}
-                        </span>
-                      </CTableDataCell>
-                      <CTableDataCell>{formatDate(job.created_at)}</CTableDataCell>
-                      <CTableDataCell>
-                        <CButton
-                          color="warning"
-                          size="sm"
-                          className="me-2"
-                          onClick={() => handleUpdate(job.NRP)}
-                          title="Edit"
-                        >
-                          <CIcon icon={cilPen} />
-                        </CButton>
-                        <CButton
-                          color="success"
-                          size="sm"
-                          onClick={() => setCompleteItem(job)}
-                          title="Selesai"
-                        >
-                          <CIcon icon={cilCheck} />
-                        </CButton>
+                  {currentItems.length > 0 ? (
+                    currentItems.map((job) => (
+                      <CTableRow key={job.NRP}>
+                        <CTableDataCell>{job.NRP}</CTableDataCell>
+                        <CTableDataCell>{job.NAME}</CTableDataCell>
+                        <CTableDataCell>{job.JOB_CLASS}</CTableDataCell>
+                        <CTableDataCell>{job.JOB_DESC}</CTableDataCell>
+                        <CTableDataCell>{job.FACTORY}</CTableDataCell>
+                        <CTableDataCell>{formatDate(job.DUE_DATE)}</CTableDataCell>
+                        <CTableDataCell>
+                          <span className={`status-badge status-${job.STATUS?.toLowerCase()}`}>
+                            {job.STATUS || 'N/A'}
+                          </span>
+                        </CTableDataCell>
+                        <CTableDataCell>{formatDate(job.created_at)}</CTableDataCell>
+                        <CTableDataCell>
+                          <CButton
+                            color="warning"
+                            size="sm"
+                            className="me-2"
+                            onClick={() => handleUpdate(job)}
+                            title="Edit"
+                          >
+                            <CIcon icon={cilPen} />
+                          </CButton>
+                          <CButton
+                            color="success"
+                            size="sm"
+                            onClick={() => setCompleteItem(job)}
+                            title="Selesai"
+                          >
+                            <CIcon icon={cilCheck} />
+                          </CButton>
+                        </CTableDataCell>
+                      </CTableRow>
+                    ))
+                  ) : (
+                    <CTableRow>
+                      <CTableDataCell colSpan="9" className="text-center">
+                        Tidak ada data pekerjaan yang tersedia
                       </CTableDataCell>
                     </CTableRow>
-                  ))}
+                  )}
                 </CTableBody>
               </CTable>
             </div>
 
-            <CPagination className="mt-3 justify-content-center">
-              <CPaginationItem
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-              >
-                Previous
-              </CPaginationItem>
-              {[...Array(totalPages)].map((_, index) => (
+            {totalPages > 1 && (
+              <CPagination className="mt-3 justify-content-center">
                 <CPaginationItem
-                  key={index + 1}
-                  active={currentPage === index + 1}
-                  onClick={() => handlePageChange(index + 1)}
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
                 >
-                  {index + 1}
+                  Previous
                 </CPaginationItem>
-              ))}
-              <CPaginationItem
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
-              >
-                Next
-              </CPaginationItem>
-            </CPagination>
+                {[...Array(totalPages)].map((_, index) => (
+                  <CPaginationItem
+                    key={index + 1}
+                    active={currentPage === index + 1}
+                    onClick={() => handlePageChange(index + 1)}
+                  >
+                    {index + 1}
+                  </CPaginationItem>
+                ))}
+                <CPaginationItem
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                </CPaginationItem>
+              </CPagination>
+            )}
           </CCardBody>
         </CCard>
 
-        {error && <div className="alert alert-danger">{error}</div>}
-
+        {/* Modal for completing job */}
         <CModal visible={!!completeItem} onClose={() => setCompleteItem(null)}>
           <CModalHeader>
             <CModalTitle>Konfirmasi Penyelesaian Pekerjaan</CModalTitle>
@@ -263,8 +301,73 @@ const JobList = () => {
             <CButton color="secondary" onClick={() => setCompleteItem(null)}>
               Batal
             </CButton>
-            <CButton color="success" onClick={handleComplete}>
-              Selesai
+            <CButton
+              color="success"
+              onClick={handleComplete}
+              disabled={completingJob}
+            >
+              {completingJob ? (
+                <>
+                  <CSpinner size="sm" color="light" className="me-1" />
+                  Memproses...
+                </>
+              ) : (
+                'Selesai'
+              )}
+            </CButton>
+          </CModalFooter>
+        </CModal>
+
+        {/* Modal for updating job */}
+        <CModal visible={!!updateItem} onClose={() => setUpdateItem(null)}>
+          <CModalHeader>
+            <CModalTitle>Perbarui Pekerjaan</CModalTitle>
+          </CModalHeader>
+          <CModalBody>
+            <CFormInput
+              label="Nama"
+              value={updateItem?.NAME || ''}
+              onChange={(e) => setUpdateItem({ ...updateItem, NAME: e.target.value })}
+            />
+            <CFormInput
+              label="Deskripsi Pekerjaan"
+              value={updateItem?.JOB_DESC || ''}
+              onChange={(e) => setUpdateItem({ ...updateItem, JOB_DESC: e.target.value })}
+            />
+            <CFormInput
+              label="Job Class"
+              value={updateItem?.JOB_CLASS || ''}
+              onChange={(e) => setUpdateItem({ ...updateItem, JOB_CLASS: e.target.value })}
+            />
+            <CFormInput
+              label="Pabrik"
+              value={updateItem?.FACTORY || ''}
+              onChange={(e) => setUpdateItem({ ...updateItem, FACTORY: e.target.value })}
+            />
+            <CFormInput
+              label="Tanggal Jatuh Tempo"
+              type="date"
+              value={updateItem?.DUE_DATE?.split('T')[0] || ''}
+              onChange={(e) => setUpdateItem({ ...updateItem, DUE_DATE: e.target.value })}
+            />
+          </CModalBody>
+          <CModalFooter>
+            <CButton color="secondary" onClick={() => setUpdateItem(null)}>
+              Batal
+            </CButton>
+            <CButton
+              color="primary"
+              onClick={handleUpdateJob}
+              disabled={updatingJob}
+            >
+              {updatingJob ? (
+                <>
+                  <CSpinner size="sm" color="light" className="me-1" />
+                  Memperbarui...
+                </>
+              ) : (
+                'Perbarui'
+              )}
             </CButton>
           </CModalFooter>
         </CModal>

@@ -29,7 +29,7 @@ const JobList = React.lazy(() => import('./views/manufacturing/joblist/JobList.j
 const JobHistory = React.lazy(() => import('./views/manufacturing/jobhistory/JobHistory.js'))
 const AddInventory = React.lazy(() => import('./views/manufacturing/inventory/AddInventory'))
 const UpdateInventory = React.lazy(() => import('./views/manufacturing/inventory/UpdateInventory'))
-const Select = React.lazy(() => import('./views/maintenance/select/Select'))
+
 
 // Timeline Project
 const Charts = React.lazy(() => import('./views/charts/Charts'))
@@ -75,7 +75,7 @@ const routes = [
   },
 
   // Maintenance
-  { path: '/maintenance/select', name: 'Select', element: Select },
+
 
   // Timeline Project
   { path: '/charts', name: 'Charts', element: Charts },
